@@ -1,0 +1,50 @@
+---
+title: "JSC370 Final Project"
+author: "Your Name"
+output: 
+    html_document:
+        toc: TRUE
+        toc_float: TRUE
+---
+
+This is my JSC370 Final Project website.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plotly)
+library(leaflet)
+```
+
+## Showcasing plots {.tabset}
+
+### Figure 1
+```{r echo=FALSE}
+# Generate random data
+set.seed(42) # For reproducibility
+x <- rnorm(100)
+y <- rnorm(100, mean = 50, sd = 10)
+data <- data.frame(x, y)
+
+# Create interactive scatter plot
+plot_ly(data, x = ~x, y = ~y, type = 'scatter', mode = 'markers') %>%
+  layout(title = 'Interactive Scatter Plot',
+         xaxis = list(title = 'Random X'),
+         yaxis = list(title = 'Random Y'))
+```
+
+### Figure 2
+```{r echo=FALSE}
+# Generate geographic data
+set.seed(42)
+locations <- data.frame(
+  lon = runif(20, min = -180, max = 180),
+  lat = runif(20, min = -90, max = 90),
+  place = paste("Location", 1:20)
+)
+
+# Create interactive map
+leaflet(data = locations) %>%
+  addTiles() %>%
+  addMarkers(~lon, ~lat, popup = ~place)
+```
+

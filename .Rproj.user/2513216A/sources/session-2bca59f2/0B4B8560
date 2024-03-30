@@ -1,0 +1,27 @@
+{
+    "id": "0B4B8560",
+    "path": "//wsl.localhost/Ubuntu/root/final-website/index.Rmd",
+    "project_path": "index.Rmd",
+    "type": "r_markdown",
+    "hash": "1603862316",
+    "contents": "",
+    "dirty": false,
+    "created": 1711769614723.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "12,0",
+        "scrollLine": "0",
+        "last_setup_crc32": "2bca59f27fc63559"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1711769748,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1711769977600,
+    "read_only": false,
+    "read_only_alternatives": []
+}
