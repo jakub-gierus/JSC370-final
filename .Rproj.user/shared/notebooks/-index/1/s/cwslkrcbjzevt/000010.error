@@ -1,1 +1,0 @@
-{"frames":[],"message":"Error in plot_ly(data, x = ~x, y = ~y, type = \"scatter\", mode = \"markers\") %>%  : \n  could not find function \"%>%\"\n"}

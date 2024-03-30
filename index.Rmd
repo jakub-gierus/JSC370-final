@@ -1,6 +1,6 @@
 ---
 title: "JSC370 Final Project"
-author: "Your Name"
+author: "Jakub Gierus"
 output: 
     html_document:
         toc: TRUE
@@ -8,6 +8,12 @@ output:
 ---
 
 This is my JSC370 Final Project website.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plotly)
+library(leaflet)
+```
 
 ## Showcasing plots {.tabset}
 
