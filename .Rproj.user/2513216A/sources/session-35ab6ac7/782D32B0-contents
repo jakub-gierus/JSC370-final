@@ -1,0 +1,195 @@
+---
+title: "HW3"
+author: "Jakub Gierus"
+date: "2024-03-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+## PART 1
+
+```{r }
+library(httr)
+api_key <- "VTcbPmZ14Hd3jCwY3iHmnFULZqmJ2VPhULmx4CA6"
+```
+
+```{r}
+start_date <- "2024-03-01" 
+end_date <- "2024-03-04"
+
+url <- paste0("https://api.nasa.gov/neo/rest/v1/feed?start_date=", start_date,
+              "&end_date=", end_date, "&api_key=", api_key)
+
+response <- GET(url)
+content_data <- content(response, "parsed")
+```
+
+```{r}
+neos_count <- content_data$element_count
+
+
+neos_by_date <- content_data$near_earth_objects
+
+first_neo <- neos_by_date[[1]][[1]]
+available_params <- names(first_neo)
+```
+
+```{r}
+library(dplyr)
+
+neos_info <- data.frame()
+
+for (date in names(neos_by_date)) {
+  for (neo in neos_by_date[[date]]) {
+    neos_info <- rbind(neos_info, data.frame(
+      Date = date,
+      Estimated_Diameter_Min = neo$estimated_diameter$meters$estimated_diameter_min,
+      Estimated_Diameter_Max = neo$estimated_diameter$meters$estimated_diameter_max,
+      Is_Hazardous = neo$is_potentially_hazardous_asteroid,
+      Relative_Velocity = as.numeric(neo$close_approach_data[[1]]$relative_velocity$kilometers_per_second)
+    ))
+  }
+}
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(neos_info, aes(x = Date)) +
+  geom_histogram(stat = "count", fill = "steelblue", color = "white") +
+  labs(x = "Date", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+It is not clear that the frequency of NEOs detected is correlated with the date.
+
+### Exploring Associations
+
+```{r}
+ggplot(neos_info, aes(x = Estimated_Diameter_Min, y = Relative_Velocity, color = Is_Hazardous)) +
+  geom_point() +
+  labs(x = "Estimated Diameter Min", y = "Relative Velocity", color = "Is Hazardous") +
+  theme_minimal()
+```
+```{r}
+ggplot(neos_info, aes(x = Is_Hazardous, y = Relative_Velocity, fill = Is_Hazardous)) +
+  geom_boxplot() +
+  labs(x = "Is Hazardous", y = "Relative Velocity") +
+  theme_minimal()
+```
+
+```{r}
+cor(neos_info$Estimated_Diameter_Min, neos_info$Relative_Velocity)
+```
+```{r}
+neos_info %>%
+  group_by(Is_Hazardous) %>%
+  summarise(
+    mean_diameter = mean(Estimated_Diameter_Min),
+    median_diameter = median(Estimated_Diameter_Min),
+    sd_diameter = sd(Estimated_Diameter_Min),
+    mean_velocity = mean(Relative_Velocity),
+    median_velocity = median(Relative_Velocity),
+    sd_velocity = sd(Relative_Velocity)
+  )
+```
+## PART 2
+
+```{r}
+library(data.table)
+library(httr)
+library(jsonlite)
+url <- "https://www.consumerfinance.gov/data-research/consumer-complaints/search/api/v1/"
+
+response <- GET(url, query = list(size = 10000, date_received_min = "2021-01-01", date_received_max = "2023-12-31"))
+
+data <- fromJSON(httr::content(response, as="text"))
+
+complaints <- as.data.table(data$hits$hits)
+
+complaints
+```
+
+```{r}
+complaints <- complaints[, .(complaint_id = `X_id`,
+                             issue = `X_source.issue`,
+                             date_received = `X_source.date_received`,
+                             complaint_narrative = `X_source.complaint_what_happened`)]
+
+dim(complaints)
+names(complaints)
+```
+
+```{r}
+library(tm)
+library(SnowballC)
+
+corpus <- Corpus(VectorSource(complaints$complaint_narrative))
+
+corpus <- tm_map(corpus, content_transformer(tolower))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, stripWhitespace)
+
+dtm <- DocumentTermMatrix(corpus)
+freq <- colSums(as.matrix(dtm))
+freq_sorted <- sort(freq, decreasing = TRUE)
+head(freq_sorted, 10)
+
+corpus <- tm_map(corpus, removeWords, stopwords("english"))
+dtm_nostop <- DocumentTermMatrix(corpus)
+freq_nostop <- colSums(as.matrix(dtm_nostop))
+freq_nostop_sorted <- sort(freq_nostop, decreasing = TRUE)
+head(freq_nostop_sorted, 5)
+
+```
+
+```{r}
+library(quanteda)
+
+tokens <- tokens(complaints$complaint_narrative, what = "word")
+bigrams <- tokens_ngrams(tokens, n = 2)
+bigram_df <- dfm(bigrams)
+bigram_df <- dfm_trim(bigram_df, min_count = 5)  # Adjust min_count as needed
+
+bigram_freqs <- topfeatures(bigram_df, 10)
+
+
+bigram_freqs_df <- data.frame(bigram = names(bigram_freqs), frequency = bigram_freqs, row.names = NULL)
+
+ggplot(bigram_freqs_df, aes(x = reorder(bigram, frequency), y = frequency)) +
+  geom_bar(stat = "identity") +
+  xlab("Bigram") + ylab("Frequency") +
+  coord_flip() + theme_minimal()
+```
+
+```{r}
+library(tidytext)
+library(dplyr)
+
+tokens <- complaints %>%
+  unnest_tokens(word, complaint_narrative)
+
+tf_idf <- tokens %>%
+  count(issue, word) %>%
+  bind_tf_idf(word, issue, n) %>%
+  arrange(desc(tf_idf))
+
+top_issues <- complaints %>%
+  count(issue) %>%
+  top_n(3, n) %>%
+  pull(issue)
+
+top_tf_idf <- tf_idf %>%
+  filter(issue %in% top_issues) %>%
+  group_by(issue) %>%
+  top_n(5, tf_idf) %>%
+  ungroup()
+
+print(top_tf_idf)
+```
+

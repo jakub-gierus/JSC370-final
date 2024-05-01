@@ -7,44 +7,197 @@ output:
         toc_float: TRUE
 ---
 
-This is my JSC370 Final Project website.
+This is my JSC370 Final Project website. "Jeopardy!" is a classic American television game show, renowned for its unique answer-and-question format. Conceived by Merv Griffin, the show originally premiered in 1964 and underwent several iterations before settling into its most famous version in 1984, hosted by Alex Trebek until his death in 2020. Contestants on "Jeopardy!" compete to answer questions from various categories, presented in the form of answers to which they must supply the questions. The show is divided into three rounds: the Jeopardy round, the Double Jeopardy round, and Final Jeopardy, where contestants can wager their earnings. The first two rounds include 6 categories, and 5 questions per category, totaling 30 question per round, and a maximum of 61 questions in a game. The winner of a "Jeopardy!" game gets to be on the next game.
+The dataset used in this project includes question, episode and contestant data on the 217 episodes of the show's 35th season, from Show #6096 (2018-09-10) to Show #8045 (2019-07-26).
+
+
+The following figures explore some of the described data, especially in analysis of factors correlating with final scores. A full report can be found at https://github.com/jakub-gierus/JSC370-final/blob/master/Jeopardy%20Data%20Analysis.pdf
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(plotly)
 library(leaflet)
+library(whatr)
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(tidyr)
+library(zoo)
+library(text2vec)
+synopses <- whatr::synopses
+scores <- whatr::scores
+players <- whatr::players
+episodes <- whatr::episodes
+boards <- whatr::boards
+
+synopses <- synopses %>% mutate(correct_rate = right / (right + wrong))
+synopses <- synopses %>% mutate(unique_id = row_number())
+synopses_enriched <- merge(synopses, players, by.x=c("game", "name"), by.y=c("game", "first"), all.x=TRUE)
+synopses_enriched <- synopses_enriched[order(synopses_enriched$game, -synopses_enriched$final),]
+synopses_enriched$winner <- !duplicated(synopses_enriched$game)
+synopses_sorted <- synopses_enriched[order(synopses_enriched$final, decreasing = TRUE),]
+```
+
+```{r synopses-wrangling}
+synopses <- synopses %>% mutate(correct_rate = right / (right + wrong))
+synopses <- synopses %>% mutate(unique_id = row_number())
+synopses_enriched <- merge(synopses, players, by.x=c("game", "name"), by.y=c("game", "first"), all.x=TRUE)
+synopses_enriched <- synopses_enriched[order(synopses_enriched$game, -synopses_enriched$final),]
+synopses_enriched$winner <- !duplicated(synopses_enriched$game)
+synopses_sorted <- synopses_enriched[order(synopses_enriched$final, decreasing = TRUE),]
+```
+
+
+```{r scores-wrangling}
+contestants_per_game <- scores %>% 
+  select(game, name) %>% 
+  distinct()
+
+all_clues <- scores %>%
+  select(game, i) %>%
+  distinct() 
+
+
+all_combinations <- all_clues %>%
+  left_join(distinct(contestants_per_game), by = "game") %>%
+  distinct()
+
+complete_scores <- left_join(all_combinations, scores, by = c("game", "i", "name"))
+
+complete_scores <- complete_scores %>%
+  group_by(game, i) %>%
+  mutate(round = coalesce(round, first(round[!is.na(round)])),
+         double = coalesce(double, first(double[!is.na(double)]))) %>%
+  ungroup()
+
+complete_scores <- complete_scores %>%
+  arrange(game,  i, name)
+
+complete_scores$score[is.na(complete_scores$score)] <- 0
+
+complete_scores <- complete_scores %>%
+  group_by(game, name) %>%
+  mutate(cumulative_score = cumsum(score)) %>%
+  ungroup()
+
+complete_scores <- complete_scores %>%
+  group_by(game, name) %>%
+  mutate(final_score = last(cumulative_score)) %>%
+  ungroup()
+
+complete_scores <- complete_scores %>%
+  group_by(game) %>%
+  arrange(desc(final_score), .by_group = TRUE) %>%
+  mutate(rank = match(final_score, unique(final_score))) %>%
+  ungroup()
+
+complete_scores <- complete_scores %>%
+  arrange(game,  i, name)
 ```
 
 ## Showcasing plots {.tabset}
 
-### Figure 1
+### Correct Answer Rate
 ```{r echo=FALSE}
-# Generate random data
-set.seed(42) # For reproducibility
-x <- rnorm(100)
-y <- rnorm(100, mean = 50, sd = 10)
-data <- data.frame(x, y)
+library(plotly)
 
-# Create interactive scatter plot
-plot_ly(data, x = ~x, y = ~y, type = 'scatter', mode = 'markers') %>%
-  layout(title = 'Interactive Scatter Plot',
-         xaxis = list(title = 'Random X'),
-         yaxis = list(title = 'Random Y'))
+p <- ggplot(synopses, aes(x = final, y = correct_rate)) +
+  geom_point(aes(color = right, text = paste("Final Score: $", format(final, big.mark = ","), "<br>",
+                                              "Correct Answer Rate: ", percent(correct_rate, accuracy = 0.1))), 
+             alpha = 0.6, size = 3) + 
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +  
+  scale_color_gradient(low = "lightblue", high = "darkblue") +  
+  labs(x = "Final Score", y = "Correct Answer Rate", title = "Scatterplot of Final Score vs. Correct Answer Rate") +
+  theme_minimal() + 
+  theme(legend.title = element_blank()) +  
+  scale_x_continuous(labels = dollar_format(prefix = "$", big.mark = ","),  breaks=seq(from=0, to=max(synopses$final), by=30000)) +
+  scale_y_continuous(labels = function(y) paste(y*100, '%'))
+
+ggplotly(p, tooltip = "text") %>%
+  layout(hoverlabel = list(bgcolor = "white", font = list(size = 12, color = "black")))
 ```
 
-### Figure 2
-```{r echo=FALSE}
-# Generate geographic data
-set.seed(42)
-locations <- data.frame(
-  lon = runif(20, min = -180, max = 180),
-  lat = runif(20, min = -90, max = 90),
-  place = paste("Location", 1:20)
-)
+The correct answer rate represents the percentage of all questions that the contestant has answered that he has also got right. As can be seen from the plot, there is not a particularly strong correlation, only a slight positive correlation between the correct answer rate and final score. This can be interpreted in a lot of ways, but what the correct answer rate does not capture how many questions a contestant answers. Thus a contestant who answered one question in a game and got it right would have a very high answer rate, but a very low final score. However, another feature of this graph is that while for low final scores, a variety of correct answer rates can be found, once you get to higher final scores (>$30,000), you need a high (>%90) correct answer rate for this. A possible explanation for this is that every correct answer in Jeopardy deducts the value of the clue. Thus, if you want a high score you need to both be answering a lot of questions right AND not answering many questions wrong.
 
-# Create interactive map
-leaflet(data = locations) %>%
-  addTiles() %>%
-  addMarkers(~lon, ~lat, popup = ~place)
+### Cumulative Scores
+```{r echo=FALSE}
+average_scores <- complete_scores %>%
+  group_by(i, rank) %>%
+  summarize(average_cumulative_score = mean(cumulative_score, na.rm = TRUE)) %>%
+  ungroup()
+
+p <- ggplot() +
+  # All games in the background
+  geom_line(data = complete_scores, aes(x = i, y = cumulative_score, group = interaction(game, name)), alpha = 0.1) +
+  # Average lines for top, middle, bottom scorers
+  geom_smooth(data = average_scores, aes(x = i, y = average_cumulative_score, color = as.factor(rank)), 
+              method = "gam", # This method is suitable for smaller datasets; consider "gam" for larger datasets
+              se = FALSE, # Don't show the confidence interval around the smooth
+              size = 1) +
+  scale_color_manual(values = c("1" = "green", "2" = "yellow", "3" = "red"), labels = c("1" = "Winner", "2" = "Middle Scorer", "3" = "Bottom Scorer")) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor.x = element_blank(), 
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank()
+  ) +
+  labs(title = "Cumulative Scores Across All Games",
+       x = "Clue Number",
+       y = "Cumulative Score",
+       color = "Contestant Rank") +
+  guides(color = guide_legend(title = "Final Score Rank")) + 
+  scale_y_continuous(labels = dollar_format(prefix = "$", big.mark = ","), breaks=seq(from=0, to=100000, by=10000))
+
+# Convert the ggplot to a plotly object
+gg <- ggplotly(p, tooltip = c("x", "y", "color"))
+
+# Customize the hover text
+gg <- gg %>%
+  style(hoverinfo = "text", hoverlabel = list(bgcolor = "white", font = list(size = 12))) %>%
+  style(text = ~paste("Clue Number: ", i, "<br>",
+                      "Cumulative Score: ", dollar_format(prefix = "$", big.mark = ",")(cumulative_score), "<br>",
+                      "Contestant Rank: ", color),
+        traces = which(grepl("line", gg$x$data[[1]]$type))) %>%
+  style(text = ~paste("Clue Number: ", i, "<br>",
+                      "Average Cumulative Score: ", dollar_format(prefix = "$", big.mark = ",")(average_cumulative_score), "<br>",
+                      "Contestant Rank: ", color),
+        traces = which(grepl("scatter", gg$x$data[[1]]$type)))
+
+# Display the interactive plot
+gg
 ```
 
+This figure shows the progression of every game of the season superimposed upon each other, in the black lines, and the average game for a winner, a middle scorer and a bottom scorer, colored in green, yellow and red respectively. You might notice that there are many significant (>$10,000) jumps up and down, despite the maximum value of a clue only being $2000. These are daily doubles, a special clue wherein a contestant can bet any amount of money, up to their total. At the end of the game, Final Jeopardy, everyone gets an opportunity to bet any amount of money, leading to those huge spikes for everyone at clue 61. The majority of games, where the lines are densest, end with the contestants making $0-$30,000. Those few games where the contestants win upward of $60,000 are all James Holzhauer games.  The average winner won $30,000 and the average bottom scorer of a game only had a final score of $5,000. Interestingly, the winner, on average, leads the entire game, and the loser is trailing both other contestants the entire game, and also loses money on average during Final Jeopardy, as can be seen by the dip at the end.
+
+### Wagering
+```{r}
+relevant_scores <- complete_scores %>%
+  filter(double == TRUE | round == 3) %>%
+  mutate(wager_percent = score / (cumulative_score - score),
+         tooltip_text = paste("Contestant:", name, "<br>",
+                         "Cumulative Score: $", scales::comma(cumulative_score), "<br>",
+                         "Wager: $", scales::comma(score), "<br>",
+                         "Wager Percentage:", scales::percent(score / cumulative_score)))  # Convert to percentage
+
+p <- ggplot(relevant_scores, aes(x = cumulative_score, y = wager_percent, color = factor(round), text = tooltip_text)) +
+  geom_point(alpha = 0.6, size = 3) +
+  scale_color_manual(values = c("red", "blue", "green"), labels = c("Jeopardy", "Double Jeopardy", "Final Jeopardy")) +
+  labs(
+    title = "Relationship Between Cumulative Score and Wager Percentage",
+    x = "Cumulative Score",
+    y = "Wager Percentage",
+    color = "Round"
+  ) +
+  scale_x_continuous(labels = scales::dollar, limits = c(0, 30000)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(face = "bold")
+  )
+
+# Convert to interactive plotly graph
+ggplotly(p, tooltip = "text")
+```
+In Jeopardy!, there are special clues, called Daily Doubles, wherein the contestant is allowed to wager any amount of their current score. Additionally, in the last clue of the game, called Final Jeopardy, every contestant is given the opportunity to wager their score. This scatterplot shows the relationship between the score of a contestant before one of these Daily Doubles, and the percentage of their final score they wager. Several interesting trends can be seen in this figure. First, in Jeopardy and Double Jeopardy, several distinct bands of datapoints appear. This is due to the fact that contestants tend to wager in nearest thousand amounts, so each band corresponds to a thousand wager ($1000, $2000, etc.). Secondly, for non-Final Jeopardy wagers, as a contestant's scores increases, the percentage of their score they are willing to wager decreases reciprocally, Conversely, the percentage that contestants wager in Final Jeopardy is somewhat uniform. A potential reason for this discrepancy is in Daily Doubles, contestants often adopt a risk-averse strategy, decreasing their wager percentage as their scores increase to protect a lead. Conversely, Final Jeopardy wagers tend to be more uniform across contestants due to strategic frameworks influenced by game theory, focusing on optimizing outcomes based on the scores of all contestants. This results in more calculated, standardized bets in Final Jeopardy, where the stakes and pressure to secure a win are significantly higher. 

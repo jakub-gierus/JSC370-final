@@ -1,0 +1,332 @@
+---
+title: "Assignment 04 - HPC and ML 2"
+output: html_document
+author: "Jakub Gierus"
+highlight: tango
+link-citations: yes
+---
+
+## Due Date
+
+April 5, 2024 by 11:59pm.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+## HPC
+
+1.  Make sure your code is nice! Rewrite the following R functions to make them faster. It is OK (and recommended) to take a look at Stackoverflow.
+
+```{r, eval = TRUE}
+# Total row sums
+fun1 <- function(mat) {
+  n <- nrow(mat)
+  ans <- double(n) 
+  for (i in 1:n) {
+    ans[i] <- sum(mat[i, ])
+  }
+  ans
+}
+
+fun1alt <- function(mat) {
+  rowSums(mat)
+}
+
+# Cumulative sum by row
+fun2 <- function(mat) {
+  n <- nrow(mat)
+  k <- ncol(mat)
+  ans <- mat
+  for (i in 1:n) {
+    for (j in 2:k) {
+      ans[i,j] <- mat[i, j] + ans[i, j - 1]
+    }
+  }
+  ans
+}
+
+fun2alt <- function(mat) {
+  t(apply(mat, 1, cumsum))
+}
+
+
+# Use the data with this code
+set.seed(2315)
+dat <- matrix(rnorm(200 * 100), nrow = 200)
+
+# Test for the first
+microbenchmark::microbenchmark(
+  fun1(dat),
+  fun1alt(dat), unit = "relative", check = "equivalent"
+)
+
+# Test for the second
+microbenchmark::microbenchmark(
+  fun2(dat),
+  fun2alt(dat), unit = "relative", check = "equivalent"
+)
+```
+
+The last argument, check = “equivalent”, is included to make sure that the functions return the same result.
+
+2.  Make things run faster with parallel computing. The following function allows simulating Pi:
+
+```{r, eval = TRUE}
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(156)
+sim_pi(1000) # 3.132
+```
+
+In order to get accurate estimates, we can run this function multiple times, with the following code:
+
+```{r, eval = TRUE}
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(1231)
+system.time({
+  ans <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
+```
+
+Rewrite the previous code using `parLapply()` to make it run faster. Make sure you set the seed using `clusterSetRNGStream()`:
+
+```{r, eval = TRUE}
+library(parallel)
+
+# Number of cores to use
+no_cores <- detectCores() - 1
+
+# Create a cluster of cores
+cl <- makeCluster(no_cores)
+
+# Set a common seed across all clusters for reproducibility
+clusterSetRNGStream(cl, 1231)
+
+# Parallel computation
+system.time({
+  # Export sim_pi function to each cluster
+  clusterExport(cl, "sim_pi")
+  
+  # Run sim_pi in parallel
+  ans <- parLapply(cl, 1:4000, sim_pi, n = 10000)
+  
+  # Calculate the mean
+  print(mean(unlist(ans)))
+  
+  # Stop the cluster
+  stopCluster(cl)
+})
+```
+
+## Machine Learning
+
+For this part we will use the `hitters` dataset, which consists of data for 332 major league baseball players. The data are [here](https://github.com/JSC370/JSC370-2024/tree/main/data/hitters). The main goal is to predict players' salaries (variable `Salary`) based on the features in the data. To do so you will replicate many of the concepts in lab 10 (trees, bagging, random forest, boosting and xgboost). Please split the data into training and testing sets (70-30) and use the same sets for all questions.
+
+1.  Fit a regression tree to predict `Salary`, and appropriately prune it based on the optimal complexity parameter. Summarize.
+2.  Predict `Salary` using bagging, construct a variable importance plot.
+3.  Repeat 2. using random forest.
+4.  Perform boosting with 1,000 trees for a range of values of the shrinkage parameter $\lambda$. Produce a plot with different shrinkage values on the x-axis and corresponding training set MSE on the y-axis. Construct a variable importance plot.
+5.  Repeat 4. using XGBoost (set up as a grid search on eta, can also grid search on other parameters).
+6.  Calculate the test MSE for each method and compare. Which approach has the best performance?
+7.  Compare the variable importance across 2 through 4 (bagging, rf, boosting, XGBoost).
+
+### Setup
+
+```{r}
+library(tidyverse)
+library(modelr)
+library(caret)
+library(rpart)
+library(randomForest)
+library(gbm)
+library(xgboost)
+
+# Load the dataset
+hitters <- read.csv("https://raw.githubusercontent.com/JSC370/JSC370-2024/main/data/hitters/hitters.csv")
+
+# Clean the data (remove NA values, etc.)
+hitters <- na.omit(hitters)
+```
+
+### Data Preparation
+
+```{r}
+set.seed(123) # For reproducibility
+training_index <- createDataPartition(hitters$Salary, p = 0.7, list = FALSE)
+training_set <- hitters[training_index, ]
+testing_set <- hitters[-training_index, ]
+
+categorical_vars <- sapply(training_set, is.character)
+training_set[categorical_vars] <- lapply(training_set[categorical_vars], as.factor)
+
+# Do the same for the testing set
+testing_set[categorical_vars] <- lapply(testing_set[categorical_vars], as.factor)
+```
+
+## Models
+
+### Regression Tree
+
+```{r}
+# Fit regression tree
+tree_model <- rpart(Salary ~ ., data = training_set, method = "anova")
+
+# Prune the tree
+printcp(tree_model) # Identify the optimal complexity parameter
+pruned_tree <- prune(tree_model, cp = tree_model$cptable[which.min(tree_model$cptable[,"xerror"]), "CP"])
+
+# Summarize the pruned tree
+summary(pruned_tree)
+
+```
+
+### Bagging
+
+```{r}
+set.seed(123)
+bagging_model <- randomForest(Salary ~ ., data = training_set, importance = TRUE)
+varImpPlot(bagging_model)
+```
+
+### Random Forest
+
+```{r}
+set.seed(123)
+rf_model <- randomForest(Salary ~ ., data = training_set, importance = TRUE, ntree = 500)
+varImpPlot(rf_model)
+```
+
+### Boosting
+
+```{r}
+set.seed(123)
+lambda_values <- seq(0.01, 0.1, by = 0.01)
+mse_values <- sapply(lambda_values, function(lambda) {
+    model <- gbm(Salary ~ ., distribution = "gaussian", data = training_set, n.trees = 1000, interaction.depth = 1, shrinkage = lambda, verbose = FALSE)
+    mean((predict(model, training_set, n.trees = 1000) - training_set$Salary)^2)
+})
+
+# Plot of MSE vs. lambda
+plot(lambda_values, mse_values, type = "b", xlab = "Lambda", ylab = "Training MSE")
+
+# Variable importance for the model with the best lambda
+best_lambda <- lambda_values[which.min(mse_values)]
+best_boosting_model <- gbm(Salary ~ ., distribution = "gaussian", data = training_set, n.trees = 1000, interaction.depth = 1, shrinkage = best_lambda, verbose = FALSE)
+summary(best_boosting_model)
+
+```
+
+### XGBoost
+
+```{r}
+# Assuming 'training_set' and 'testing_set' are your data frames
+
+# Convert training and testing sets to model matrices
+training_matrix <- model.matrix(Salary ~ . - 1, data = training_set) # The '-1' removes the intercept
+testing_matrix <- model.matrix(Salary ~ . - 1, data = testing_set)
+
+# Ensure the target variable is numeric
+training_labels <- as.numeric(training_set$Salary)
+testing_labels <- as.numeric(testing_set$Salary)
+
+# Create XGBoost DMatrices
+xg_train <- xgb.DMatrix(data = training_matrix, label = training_labels)
+xg_test <- xgb.DMatrix(data = testing_matrix, label = testing_labels)
+
+# Now, you can proceed with your XGBoost training and prediction as before
+# Example of setting up parameters and running a simple XGBoost model
+params <- list(booster = "gbtree", objective = "reg:squarederror", eta = 0.1)
+model <- xgb.train(params = params, data = xg_train, nrounds = 1000)
+
+
+```
+
+## MSE comparison
+
+```{r}
+predictions_bagging <- predict(bagging_model, testing_set)
+
+# Calculate MSE
+mse_bagging <- mean((predictions_bagging - testing_set$Salary)^2)
+
+predictions_rf <- predict(rf_model, testing_set)
+
+# Calculate MSE
+mse_rf <- mean((predictions_rf - testing_set$Salary)^2)
+
+predictions_boost <- predict(best_boosting_model, testing_set, n.trees = 1000)
+
+# Calculate MSE
+mse_boost <- mean((predictions_boost - testing_set$Salary)^2)
+
+predictions_xgb <- predict(model, xg_test)
+predictions_tree <- predict(pruned_tree, testing_set)
+
+# Calculate MSE
+mse_tree <- mean((predictions_tree - testing_set$Salary)^2)
+
+# Calculate MSE
+mse_xgb <- mean((predictions_xgb - testing_labels)^2)
+print(paste("Regression Tree MSE:", mse_tree))
+
+# Print MSE for Bagging
+print(paste("Bagging MSE:", mse_bagging))
+
+# Print MSE for Random Forest
+print(paste("Random Forest MSE:", mse_rf))
+
+# Print MSE for Boosting
+print(paste("Boosting MSE:", mse_boost))
+
+# Print MSE for XGBoost
+print(paste("XGBoost MSE:", mse_xgb))
+```
+
+The lowest MSE among models was the Random Forest.
+
+## Variable Comparison
+
+```{r}
+library(xgboost)
+
+importance_bagging <- importance(bagging_model, type = 1)  # %IncMSE
+importance_rf <- importance(rf_model, type = 1)            # %IncMSE
+importance_xgb <- xgb.importance(feature_names = colnames(training_matrix), model = model)
+df_importance_bagging <- data.frame(Feature = rownames(importance_bagging), Importance = importance_bagging[, "%IncMSE"], Model = "Bagging")
+df_importance_rf <- data.frame(Feature = rownames(importance_rf), Importance = importance_rf[, "%IncMSE"], Model = "Random Forest")
+
+df_importance_xgb <- data.frame(Feature = importance_xgb$Feature, Importance = importance_xgb$Gain, Model = "XGBoost")
+
+
+
+importance_boosting <- summary(best_boosting_model, n.trees = 1000, plot = FALSE)
+
+df_importance_boosting <- data.frame(Feature = row.names(importance_boosting), 
+                                     Importance = importance_boosting$rel.inf, 
+                                     Model = "Boosting")
+
+df_importance_bagging <- data.frame(Feature = rownames(importance_bagging), Importance = importance_bagging[, "%IncMSE"], Model = "Bagging")
+df_importance_rf <- data.frame(Feature = rownames(importance_rf), Importance = importance_rf[, "%IncMSE"], Model = "Random Forest")
+
+df_importance_xgb <- data.frame(Feature = importance_xgb$Feature, Importance = importance_xgb$Gain, Model = "XGBoost")
+
+# Combine into a single data frame
+combined_importance <- rbind(df_importance_bagging, df_importance_rf, df_importance_boosting, df_importance_xgb)
+
+# Normalize the importance to make them comparable
+combined_importance$NormalizedImportance <- with(combined_importance, Importance / max(Importance))
+
+# Print or plot the results
+print(combined_importance)
+
+
+
+```
+
+

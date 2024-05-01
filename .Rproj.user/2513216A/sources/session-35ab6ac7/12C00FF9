@@ -1,0 +1,28 @@
+{
+    "id": "12C00FF9",
+    "path": "~/midterm.Rmd",
+    "project_path": null,
+    "type": "r_markdown",
+    "hash": "0",
+    "contents": "",
+    "dirty": true,
+    "created": 1714490319707.0,
+    "source_on_save": false,
+    "relative_order": 3,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "10,67",
+        "scrollLine": "0",
+        "last_setup_crc32": "35ab6ac7c7e2e05c",
+        "disableDependencyDiscovery": "1"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1714521543,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1714526406782,
+    "read_only": false,
+    "read_only_alternatives": []
+}

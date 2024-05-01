@@ -1,0 +1,7 @@
+"0","top_words <- tidy(lda_model, matrix = ""beta"") %>%"
+"0","  group_by(topic) %>%"
+"0","  top_n(10, beta) %>%"
+"0","  ungroup() %>%"
+"0","  arrange(topic, -beta)"
+"0",""
+"0","top_words"

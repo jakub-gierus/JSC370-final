@@ -1,0 +1,6 @@
+"0","synopses <- synopses %>% mutate(correct_rate = right / (right + wrong))"
+"0","synopses <- synopses %>% mutate(unique_id = row_number())"
+"0","synopses_enriched <- merge(synopses, players, by.x=c(""game"", ""name""), by.y=c(""game"", ""first""), all.x=TRUE)"
+"0","synopses_enriched <- synopses_enriched[order(synopses_enriched$game, -synopses_enriched$final),]"
+"0","synopses_enriched$winner <- !duplicated(synopses_enriched$game)"
+"0","synopses_sorted <- synopses_enriched[order(synopses_enriched$final, decreasing = TRUE),]"
